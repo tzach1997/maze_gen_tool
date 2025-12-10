@@ -13,9 +13,10 @@ if CLIENT then
     language.Add("tool.maze.0", "Left click: generate maze. Right click: remove last maze.")
 end
 
-TOOL.ClientConVar["unit"]  = "4" -- allowed: 2,4,32
-TOOL.ClientConVar["width"] = "8"
-TOOL.ClientConVar["depth"] = "8"
+TOOL.ClientConVar["unit"]     = "4" -- allowed: 2,4,8,16,32
+TOOL.ClientConVar["width"]    = "8"
+TOOL.ClientConVar["depth"]    = "8"
+TOOL.ClientConVar["material"] = "" -- optional material to apply to spawned walls
 -- cellsize = distance between adjacent walls (depends on unit)
 
 TOOL.LastBuilding = TOOL.LastBuilding or {}
@@ -23,6 +24,8 @@ TOOL.Mazes = TOOL.Mazes or {} -- stack of generated mazes (each is a table of en
 
 -- during generation this points to the table receiving spawned parts
 local currentMazeParts = nil
+-- during generation this holds the material string to apply to each spawned part
+local currentWallMaterial = nil
 
 ----------------------------------------------------------
 -- Helpers
@@ -53,6 +56,11 @@ local function SpawnProp(ply, model, pos, ang)
     undo.Finish()
 
     ply:AddCleanup("props", ent)
+
+    -- Apply material if specified for this generation
+    if isstring(currentWallMaterial) and currentWallMaterial ~= "" then
+        pcall(function() ent:SetMaterial(currentWallMaterial) end)
+    end
 
     -- If we're currently generating a maze, register this entity in that maze's table
     if istable(currentMazeParts) then
@@ -94,20 +102,20 @@ local wallDefsByUnit = {
             { segments = 2, model = "models/hunter/plates/plate8x16.mdl" },
             { segments = 1, model = "models/hunter/plates/plate8x8.mdl"  },
         }, 
-        cellSize = 380
+        cellSize = 379
     },
     ["16"] = {
         defs = {
             { segments = 2, model = "models/hunter/plates/plate16x32.mdl" },
             { segments = 1, model = "models/hunter/plates/plate16x16.mdl" }
         },
-        cellSize = 760
+        cellSize = 758
     },
     ["32"] = {
         defs = {
             { segments = 1, model = "models/hunter/plates/plate32x32.mdl" }
         },
-        cellSize = 1520
+        cellSize = 1517
     }
 }
 
@@ -400,13 +408,16 @@ function TOOL:LeftClick(trace)
     local ply = self:GetOwner()
     if not IsValid(ply) or not trace.Hit then return false end
 
-    local width = math.Clamp(tonumber(self:GetClientInfo("width")) or 8, 2, 32)
-    local depth = math.Clamp(tonumber(self:GetClientInfo("depth")) or 8, 2, 32)
-
+    local width = math.Clamp(tonumber(self:GetClientInfo("width")) or 8, 2, 64)
+    local depth = math.Clamp(tonumber(self:GetClientInfo("depth")) or 8, 2, 64)
+6
     local unit = tostring(self:GetClientInfo("unit") or "4")
     local unitCfg = wallDefsByUnit[unit] or wallDefsByUnit["4"]
     currentWallDefs = unitCfg.defs
     local cellSize = unitCfg.cellSize
+
+    -- Read material from client settings and set for this generation
+    currentWallMaterial = tostring(self:GetClientInfo("material") or "")
 
     -- Create a new maze parts table and make SpawnProp append into it
     local newMaze = {}
@@ -416,6 +427,7 @@ function TOOL:LeftClick(trace)
 
     -- Generation finished; stop directing spawns into currentMazeParts
     currentMazeParts = nil
+    currentWallMaterial = nil
 
     -- Push the new maze onto the stack
     self.Mazes = self.Mazes or {}
@@ -460,6 +472,7 @@ function TOOL.BuildCPanel(panel)
     combo:AddChoice("4. 16 (plate16x)", "16")
     combo:AddChoice("5. 32 (plate32x)", "32")
 
-    panel:NumSlider("Maze Width (cells)",  "maze_width",    2, 128, 0)
-    panel:NumSlider("Maze Depth (cells)",  "maze_depth",    2, 128, 0)
+    panel:NumSlider("Maze Width (cells)",  "maze_width",    2, 64, 0)
+    panel:NumSlider("Maze Depth (cells)",  "maze_depth",    2, 64, 0)
+    panel:TextEntry("Wall Material (leave empty for none)", "maze_material")
 end
