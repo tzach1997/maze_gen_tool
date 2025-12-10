@@ -66,6 +66,22 @@ local function SpawnProp(ply, model, pos, ang)
     -- Apply material if specified for this generation
     if isstring(currentWallMaterial) and currentWallMaterial ~= "" then
         pcall(function() ent:SetMaterial(currentWallMaterial) end)
+
+        -- Store material as a duplicator entity modifier so advdupe/duplicator preserves it
+        pcall(function()
+            if duplicator and duplicator.RegisterEntityModifier then
+                -- register a safe, tool-specific modifier that sets the material on paste
+                duplicator.RegisterEntityModifier("maze_material", function(ply, e, data)
+                    if IsValid(e) and data and data.mat then
+                        e:SetMaterial(data.mat)
+                    end
+                end)
+            end
+
+            if duplicator and duplicator.StoreEntityModifier then
+                duplicator.StoreEntityModifier(ent, "maze_material", { mat = currentWallMaterial })
+            end
+        end)
     end
 
     -- If we're currently generating a maze, register this entity in that maze's table
