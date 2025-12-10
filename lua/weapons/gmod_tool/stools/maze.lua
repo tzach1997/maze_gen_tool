@@ -95,6 +95,22 @@ end
 -- We'll choose `wallDefs` and `cellSize` at runtime based on selected `unit`.
 -- Definitions for the three supported units (2, 4, 32).
 local wallDefsByUnit = {
+    ["1"] = {
+        defs = {
+            { segments = 32, model = "models/hunter/plates/plate1x32.mdl" },
+            { segments = 24, model = "models/hunter/plates/plate1x24.mdl" },
+            { segments = 16,  model = "models/hunter/plates/plate1x16.mdl"  },
+            { segments = 8,  model = "models/hunter/plates/plate1x8.mdl"  },
+            { segments = 7,  model = "models/hunter/plates/plate1x7.mdl"  },
+            { segments = 6, model = "models/hunter/plates/plate1x6.mdl" },
+            { segments = 5,  model = "models/hunter/plates/plate1x5.mdl" },
+            { segments = 4,  model = "models/hunter/plates/plate1x4.mdl"  },
+            { segments = 3,  model = "models/hunter/plates/plate1x3.mdl"  },
+            { segments = 2,  model = "models/hunter/plates/plate1x2.mdl"  },
+            { segments = 1,  model = "models/hunter/plates/plate1x1.mdl"  }
+        },
+        cellSize = 48
+    },
     ["2"] = {
         defs = {
             { segments = 16, model = "models/hunter/plates/plate2x32.mdl" },
@@ -146,6 +162,7 @@ local currentWallDefs = wallDefsByUnit["4"].defs
 
 -- floor/roof single-tile model per cell for each unit
 local floorTileByUnit = {
+    ["1"]  = "models/hunter/plates/plate1x1.mdl",
     ["2"]  = "models/hunter/plates/plate2x2.mdl",
     ["4"]  = "models/hunter/plates/plate4x4.mdl",
     ["8"]  = "models/hunter/plates/plate8x8.mdl",
@@ -608,6 +625,7 @@ function TOOL.BuildCPanel(panel)
     })
 
     local combo = panel:ComboBox("Wall Unit", "maze_unit")
+    combo:AddChoice("0. 1 (plate1x)", "1")
     combo:AddChoice("1. 2 (plate2x)", "2")
     combo:AddChoice("2. 4 (plate4x)", "4")
     combo:AddChoice("3. 8 (plate16x)", "8")
