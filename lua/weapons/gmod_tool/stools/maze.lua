@@ -3,7 +3,7 @@ if SERVER then
 end
 
 TOOL.Category   = "Construction"
-TOOL.Name       = "Maze Generator (unified)"
+TOOL.Name       = "Maze Generator"
 TOOL.Command    = nil
 TOOL.ConfigName = ""
 
@@ -527,10 +527,6 @@ function TOOL:Reload(trace)
 
     -- Update the client convar; this will affect generation & preview
     RunConsoleCommand("maze_rotation", tostring(newRot))
-
-    -- Optional: small notification in chat
-    chat.AddText(Color(0, 200, 255), "[Maze] Rotation set to ", Color(255,255,255), newRot .. "°")
-
 
     return true
 end
