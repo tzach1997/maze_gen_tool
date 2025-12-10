@@ -19,6 +19,10 @@ TOOL.ClientConVar["depth"] = "8"
 -- cellsize = distance between adjacent walls (depends on unit)
 
 TOOL.LastBuilding = TOOL.LastBuilding or {}
+TOOL.Mazes = TOOL.Mazes or {} -- stack of generated mazes (each is a table of ents)
+
+-- during generation this points to the table receiving spawned parts
+local currentMazeParts = nil
 
 ----------------------------------------------------------
 -- Helpers
@@ -42,13 +46,18 @@ local function SpawnProp(ply, model, pos, ang)
 
     ent:SetMoveType(MOVETYPE_NONE)
 
-    -- Undo & cleanup
+    -- Undo & cleanup (leave per-prop undo as original)
     undo.Create("Maze Part")
         undo.AddEntity(ent)
         undo.SetPlayer(ply)
     undo.Finish()
 
     ply:AddCleanup("props", ent)
+
+    -- If we're currently generating a maze, register this entity in that maze's table
+    if istable(currentMazeParts) then
+        table.insert(currentMazeParts, ent)
+    end
 
     return ent
 end
@@ -399,16 +408,21 @@ function TOOL:LeftClick(trace)
     currentWallDefs = unitCfg.defs
     local cellSize = unitCfg.cellSize
 
-    -- Remove previous maze (if we were tracking parts in the future)
-    if self.LastBuilding and istable(self.LastBuilding) then
-        for _, ent in ipairs(self.LastBuilding) do
-            if IsValid(ent) then ent:Remove() end
-        end
-    end
+    -- Create a new maze parts table and make SpawnProp append into it
+    local newMaze = {}
+    currentMazeParts = newMaze
 
     GenerateMaze(ply, trace.HitPos, trace.HitNormal, width, depth, cellSize)
 
-    self.LastBuilding = {}
+    -- Generation finished; stop directing spawns into currentMazeParts
+    currentMazeParts = nil
+
+    -- Push the new maze onto the stack
+    self.Mazes = self.Mazes or {}
+    table.insert(self.Mazes, newMaze)
+
+    -- For compatibility with older code that uses LastBuilding, set it to the last maze
+    self.LastBuilding = newMaze
 
     return true
 end
@@ -416,12 +430,17 @@ end
 function TOOL:RightClick(trace)
     if CLIENT then return true end
 
-    if self.LastBuilding and istable(self.LastBuilding) then
-        for _, ent in ipairs(self.LastBuilding) do
+    -- Pop the last placed maze and remove its entities
+    self.Mazes = self.Mazes or {}
+    local last = table.remove(self.Mazes)
+    if istable(last) then
+        for _, ent in ipairs(last) do
             if IsValid(ent) then ent:Remove() end
         end
-        self.LastBuilding = {}
     end
+
+    -- Update LastBuilding to point to the new last maze (or empty)
+    self.LastBuilding = self.Mazes[#self.Mazes] or {}
 
     return true
 end
@@ -441,6 +460,6 @@ function TOOL.BuildCPanel(panel)
     combo:AddChoice("4. 16 (plate16x)", "16")
     combo:AddChoice("5. 32 (plate32x)", "32")
 
-    panel:NumSlider("Maze Width (cells)",  "maze_width",    2, 32, 0)
-    panel:NumSlider("Maze Depth (cells)",  "maze_depth",    2, 32, 0)
+    panel:NumSlider("Maze Width (cells)",  "maze_width",    2, 128, 0)
+    panel:NumSlider("Maze Depth (cells)",  "maze_depth",    2, 128, 0)
 end
