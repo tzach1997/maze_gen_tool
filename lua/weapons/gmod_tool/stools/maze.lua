@@ -17,6 +17,8 @@ TOOL.ClientConVar["unit"]     = "4" -- allowed: 2,4,8,16,32
 TOOL.ClientConVar["width"]    = "8"
 TOOL.ClientConVar["depth"]    = "8"
 TOOL.ClientConVar["material"] = "" -- optional material to apply to spawned walls
+TOOL.ClientConVar["floor"]    = "0" -- spawn floor tiles
+TOOL.ClientConVar["roof"]     = "0" -- spawn roof tiles
 -- cellsize = distance between adjacent walls (depends on unit)
 
 TOOL.LastBuilding = TOOL.LastBuilding or {}
@@ -121,6 +123,40 @@ local wallDefsByUnit = {
 
 -- active definitions (will be swapped when the player picks a unit)
 local currentWallDefs = wallDefsByUnit["4"].defs
+
+-- floor/roof single-tile model per cell for each unit
+local floorTileByUnit = {
+    ["2"]  = "models/hunter/plates/plate2x2.mdl",
+    ["4"]  = "models/hunter/plates/plate4x4.mdl",
+    ["8"]  = "models/hunter/plates/plate8x8.mdl",
+    ["16"] = "models/hunter/plates/plate16x16.mdl",
+    ["32"] = "models/hunter/plates/plate32x32.mdl"
+}
+
+-- Spawn a flat tile for floor or roof per cell (one tile per cell)
+local function SpawnFloorOrRoof(ply, basePos, baseAng, cellSize, width, depth, unit, isRoof)
+    local right   = baseAng:Right()
+    local forward = baseAng:Forward()
+    local up      = baseAng:Up()
+
+    local model = floorTileByUnit[unit] or "models/hunter/plates/plate4x4.mdl"
+
+    -- roof placed one cell height above base; floor at base
+    local heightOffset = isRoof and cellSize or 0
+
+    for x = 1, width do
+        for y = 1, depth do
+            local centerX = (x - 0.5) * cellSize
+            local centerY = (y - 0.5) * cellSize
+
+            local offset = right * centerX + forward * centerY + up * heightOffset
+            local pos = basePos + offset
+            local ang = baseAng -- flat orientation
+
+            SpawnProp(ply, model, pos, ang)
+        end
+    end
+end
 
 ----------------------------------------------------------
 -- Maze data (DFS backtracker)
@@ -294,7 +330,7 @@ end
 ----------------------------------------------------------
 -- Core: Generate maze props
 ----------------------------------------------------------
-local function GenerateMaze(ply, hitPos, hitNormal, width, depth, cellSize)
+local function GenerateMaze(ply, hitPos, hitNormal, width, depth, cellSize, unit, wantFloor, wantRoof)
     if not SERVER then return end
 
     local cells = GenerateMazeData(width, depth)
@@ -398,6 +434,15 @@ local function GenerateMaze(ply, hitPos, hitNormal, width, depth, cellSize)
             end
         end
     end
+
+    -- Optionally spawn floor and/or roof tiles (one tile per cell)
+    if wantFloor then
+        SpawnFloorOrRoof(ply, basePos, baseAng, cellSize, width, depth, unit, false)
+    end
+
+    if wantRoof then
+        SpawnFloorOrRoof(ply, basePos, baseAng, cellSize, width, depth, unit, true)
+    end
 end
 
 ----------------------------------------------------------
@@ -410,7 +455,7 @@ function TOOL:LeftClick(trace)
 
     local width = math.Clamp(tonumber(self:GetClientInfo("width")) or 8, 2, 64)
     local depth = math.Clamp(tonumber(self:GetClientInfo("depth")) or 8, 2, 64)
-6
+
     local unit = tostring(self:GetClientInfo("unit") or "4")
     local unitCfg = wallDefsByUnit[unit] or wallDefsByUnit["4"]
     currentWallDefs = unitCfg.defs
@@ -419,11 +464,14 @@ function TOOL:LeftClick(trace)
     -- Read material from client settings and set for this generation
     currentWallMaterial = tostring(self:GetClientInfo("material") or "")
 
+    local wantFloor = tonumber(self:GetClientInfo("floor")) ~= 0
+    local wantRoof  = tonumber(self:GetClientInfo("roof"))  ~= 0
+
     -- Create a new maze parts table and make SpawnProp append into it
     local newMaze = {}
     currentMazeParts = newMaze
 
-    GenerateMaze(ply, trace.HitPos, trace.HitNormal, width, depth, cellSize)
+    GenerateMaze(ply, trace.HitPos, trace.HitNormal, width, depth, cellSize, unit, wantFloor, wantRoof)
 
     -- Generation finished; stop directing spawns into currentMazeParts
     currentMazeParts = nil
@@ -475,4 +523,6 @@ function TOOL.BuildCPanel(panel)
     panel:NumSlider("Maze Width (cells)",  "maze_width",    2, 64, 0)
     panel:NumSlider("Maze Depth (cells)",  "maze_depth",    2, 64, 0)
     panel:TextEntry("Wall Material (leave empty for none)", "maze_material")
+    panel:CheckBox("Add Floor", "maze_floor")
+    panel:CheckBox("Add Roof", "maze_roof")
 end
