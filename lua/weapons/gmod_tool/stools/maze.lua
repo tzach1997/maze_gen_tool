@@ -8,18 +8,20 @@ TOOL.Command    = nil
 TOOL.ConfigName = ""
 
 if CLIENT then
-    language.Add("tool.maze.name", "Maze Generator (unified)")
-    language.Add("tool.maze.desc", "Generate a maze with selectable wall unit (2/4/32)")
-    language.Add("tool.maze.0", "Left click: generate maze. Right click: remove last maze.")
+    language.Add("tool.maze.name", "Maze Generator")
+    language.Add("tool.maze.desc", "Generate a maze with selectable wall unit (2/4/8/16/32)")
+    language.Add("tool.maze.0", "Left click: generate maze. Right click: remove last maze. Reload: rotate maze placement.")
 end
 
-TOOL.ClientConVar["unit"]     = "4" -- allowed: 2,4,8,16,32
+TOOL.ClientConVar["unit"]     = "4"  -- allowed: 2,4,8,16,32
 TOOL.ClientConVar["width"]    = "8"
 TOOL.ClientConVar["depth"]    = "8"
-TOOL.ClientConVar["material"] = "" -- optional material to apply to spawned walls
-TOOL.ClientConVar["floor"]    = "0" -- spawn floor tiles
-TOOL.ClientConVar["roof"]     = "0" -- spawn roof tiles
-TOOL.ClientConVar["rotation"] = "0" -- rotation in 90° increments (0, 90, 180, 270)
+TOOL.ClientConVar["material"] = ""   -- optional material to apply to spawned walls
+TOOL.ClientConVar["floor"]    = "0"  -- spawn floor tiles
+TOOL.ClientConVar["roof"]     = "0"  -- spawn roof tiles
+TOOL.ClientConVar["rotation"] = "0"  -- rotation in 90° increments (0, 90, 180, 270)
+TOOL.ClientConVar["preview"]  = "1"  -- PREVIEW: show outer outline before placing
+
 -- cellsize = distance between adjacent walls (depends on unit)
 
 TOOL.LastBuilding = TOOL.LastBuilding or {}
@@ -105,7 +107,7 @@ local wallDefsByUnit = {
             { segments = 3, model = "models/hunter/plates/plate8x24.mdl" },
             { segments = 2, model = "models/hunter/plates/plate8x16.mdl" },
             { segments = 1, model = "models/hunter/plates/plate8x8.mdl"  },
-        }, 
+        },
         cellSize = 379
     },
     ["16"] = {
@@ -509,6 +511,82 @@ function TOOL:RightClick(trace)
     return true
 end
 
+function TOOL:Reload(trace)
+
+    -- Get current rotation from the tool's client convar
+    local cur = self:GetClientNumber("rotation") or 0
+
+    -- Snap to nearest 90 and then add 90
+    local snapped = math.Round(cur / 90) * 90
+    local newRot = snapped + 90
+
+    -- Wrap around at 360
+    if newRot >= 360 then
+        newRot = newRot - 360
+    end
+
+    -- Update the client convar; this will affect generation & preview
+    RunConsoleCommand("maze_rotation", tostring(newRot))
+
+    -- Optional: small notification in chat
+    chat.AddText(Color(0, 200, 255), "[Maze] Rotation set to ", Color(255,255,255), newRot .. "°")
+
+
+    return true
+end
+
+
+
+
+local previewColor = Color(0, 255, 0, 200)
+
+    -- Draw a 3D rectangle outline representing the maze's outer walls
+function TOOL:DrawHUD()
+    if not tobool(self:GetClientInfo("preview")) then return end
+
+    local ply = LocalPlayer()
+    if not IsValid(ply) then return end
+
+    local tr = ply:GetEyeTrace()
+    if not tr.Hit or tr.HitSky then return end
+
+    local width = math.Clamp(tonumber(self:GetClientInfo("width")) or 8, 2, 64)
+    local depth = math.Clamp(tonumber(self:GetClientInfo("depth")) or 8, 2, 64)
+
+    local unit = tostring(self:GetClientInfo("unit") or "4")
+    local unitCfg = wallDefsByUnit[unit] or wallDefsByUnit["4"]
+    local cellSize = unitCfg.cellSize or 190
+
+    local rotation = tonumber(self:GetClientInfo("rotation")) or 0
+
+    -- Base angle & position same as server
+    local baseAng = Angle(0, 0, 0)
+    baseAng:RotateAroundAxis(baseAng:Up(), rotation)
+
+    local right   = baseAng:Right()
+    local forward = baseAng:Forward()
+    local up      = baseAng:Up()
+
+    -- Slight lift to avoid Z-fighting
+    local basePos = tr.HitPos + tr.HitNormal * 4 + up * 1
+
+    local sizeX = width * cellSize
+    local sizeY = depth * cellSize
+
+    local p1 = basePos
+    local p2 = basePos + right * sizeX
+    local p3 = basePos + right * sizeX + forward * sizeY
+    local p4 = basePos + forward * sizeY
+
+    cam.Start3D(EyePos(), EyeAngles())
+        render.SetColorMaterial()
+        render.DrawLine(p1, p2, previewColor, true)
+        render.DrawLine(p2, p3, previewColor, true)
+        render.DrawLine(p3, p4, previewColor, true)
+        render.DrawLine(p4, p1, previewColor, true)
+    cam.End3D()
+end
+
 ----------------------------------------------------------
 -- Control panel
 ----------------------------------------------------------
@@ -530,4 +608,7 @@ function TOOL.BuildCPanel(panel)
     panel:CheckBox("Add Floor", "maze_floor")
     panel:CheckBox("Add Roof", "maze_roof")
     panel:NumSlider("Rotate", "maze_rotation", 0, 360, 0)
+
+    -- PREVIEW toggle
+    panel:CheckBox("Preview outer outline", "maze_preview")
 end
