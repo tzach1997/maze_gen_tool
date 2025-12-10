@@ -1,0 +1,14 @@
+{
+  "title": "Cazo's Maze Gen",
+  "type": "tool",
+  "ignore": [
+    "*.blend",
+    "*.qc",
+    "*.smd",
+    "*.psd",
+    "*.xcf",    
+    "*.bat",    
+    "*.txt",    
+    "*.png"
+  ]
+}
