@@ -3,21 +3,20 @@ if SERVER then
 end
 
 TOOL.Category   = "Construction"
-TOOL.Name       = "Maze Generator"
+TOOL.Name       = "Maze Generator (unified)"
 TOOL.Command    = nil
 TOOL.ConfigName = ""
 
 if CLIENT then
-    language.Add("tool.maze.name", "Maze Generator")
-    language.Add("tool.maze.desc", "Generate a maze")
+    language.Add("tool.maze.name", "Maze Generator (unified)")
+    language.Add("tool.maze.desc", "Generate a maze with selectable wall unit (2/4/32)")
     language.Add("tool.maze.0", "Left click: generate maze. Right click: remove last maze.")
 end
 
--- Maze size in cells
-TOOL.ClientConVar["width"]    = "8"
-TOOL.ClientConVar["depth"]    = "8"
--- cellsize = distance between adjacent walls
-TOOL.ClientConVar["cellsize"] = "190"
+TOOL.ClientConVar["unit"]  = "4" -- allowed: 2,4,32
+TOOL.ClientConVar["width"] = "8"
+TOOL.ClientConVar["depth"] = "8"
+-- cellsize = distance between adjacent walls (depends on unit)
 
 TOOL.LastBuilding = TOOL.LastBuilding or {}
 
@@ -54,15 +53,57 @@ local function SpawnProp(ply, model, pos, ang)
     return ent
 end
 
--- Models & how many "cell distances" they cover
--- segments = how many wall positions this plate replaces
-local wallDefs = {
-    { segments = 8, model = "models/hunter/plates/plate4x32.mdl" },
-    { segments = 6, model = "models/hunter/plates/plate4x24.mdl" },
-    { segments = 4, model = "models/hunter/plates/plate4x16.mdl" },
-    { segments = 2, model = "models/hunter/plates/plate4x8.mdl"  },
-    { segments = 1, model = "models/hunter/plates/plate4x4.mdl"  }
+-- We'll choose `wallDefs` and `cellSize` at runtime based on selected `maze_unit`.
+-- Definitions for the three supported units (2, 4, 32).
+local wallDefsByUnit = {
+    ["2"] = {
+        defs = {
+            { segments = 16, model = "models/hunter/plates/plate2x32.mdl" },
+            { segments = 12, model = "models/hunter/plates/plate2x24.mdl" },
+            { segments = 8,  model = "models/hunter/plates/plate2x16.mdl" },
+            { segments = 4,  model = "models/hunter/plates/plate2x8.mdl"  },
+            { segments = 3,  model = "models/hunter/plates/plate2x6.mdl"  },
+            { segments = 2,  model = "models/hunter/plates/plate2x4.mdl"  },
+            { segments = 1,  model = "models/hunter/plates/plate2x2.mdl"  }
+        },
+        cellSize = 95
+    },
+    ["4"] = {
+        defs = {
+            { segments = 8, model = "models/hunter/plates/plate4x32.mdl" },
+            { segments = 6, model = "models/hunter/plates/plate4x24.mdl" },
+            { segments = 4, model = "models/hunter/plates/plate4x16.mdl" },
+            { segments = 2, model = "models/hunter/plates/plate4x8.mdl"  },
+            { segments = 1, model = "models/hunter/plates/plate4x4.mdl"  }
+        },
+        cellSize = 190
+    },
+    ["8"] = {
+        defs = {
+            { segments = 4, model = "models/hunter/plates/plate8x32.mdl" },
+            { segments = 3, model = "models/hunter/plates/plate8x24.mdl" },
+            { segments = 2, model = "models/hunter/plates/plate8x16.mdl" },
+            { segments = 1, model = "models/hunter/plates/plate8x8.mdl"  },
+        }, 
+        cellSize = 380
+    },
+    ["16"] = {
+        defs = {
+            { segments = 2, model = "models/hunter/plates/plate16x32.mdl" },
+            { segments = 1, model = "models/hunter/plates/plate16x16.mdl" }
+        },
+        cellSize = 760
+    },
+    ["32"] = {
+        defs = {
+            { segments = 1, model = "models/hunter/plates/plate32x32.mdl" }
+        },
+        cellSize = 1520
+    }
 }
+
+-- active definitions (will be swapped when the player picks a unit)
+local currentWallDefs = wallDefsByUnit["4"].defs
 
 ----------------------------------------------------------
 -- Maze data (DFS backtracker)
@@ -148,7 +189,7 @@ local function SpawnHorizontalRun(ply, basePos, baseAng, cellSize, wallHeightOff
 
     while remaining > 0 do
         local chosen = nil
-        for _, def in ipairs(wallDefs) do
+        for _, def in ipairs(currentWallDefs) do
             if def.segments <= remaining then
                 chosen = def
                 break
@@ -203,7 +244,7 @@ local function SpawnVerticalRun(ply, basePos, baseAng, cellSize, wallHeightOffse
 
     while remaining > 0 do
         local chosen = nil
-        for _, def in ipairs(wallDefs) do
+        for _, def in ipairs(currentWallDefs) do
             if def.segments <= remaining then
                 chosen = def
                 break
@@ -350,11 +391,15 @@ function TOOL:LeftClick(trace)
     local ply = self:GetOwner()
     if not IsValid(ply) or not trace.Hit then return false end
 
-    local width    = math.Clamp(tonumber(self:GetClientInfo("width"))    or 8, 2, 32)
-    local depth    = math.Clamp(tonumber(self:GetClientInfo("depth"))    or 8, 2, 32)
-    local cellSize = math.Clamp(tonumber(self:GetClientInfo("cellsize")) or 240, 32, 1024)
+    local width = math.Clamp(tonumber(self:GetClientInfo("width")) or 8, 2, 32)
+    local depth = math.Clamp(tonumber(self:GetClientInfo("depth")) or 8, 2, 32)
 
-    -- Remove previous maze
+    local unit = tostring(self:GetClientInfo("unit") or "4")
+    local unitCfg = wallDefsByUnit[unit] or wallDefsByUnit["4"]
+    currentWallDefs = unitCfg.defs
+    local cellSize = unitCfg.cellSize
+
+    -- Remove previous maze (if we were tracking parts in the future)
     if self.LastBuilding and istable(self.LastBuilding) then
         for _, ent in ipairs(self.LastBuilding) do
             if IsValid(ent) then ent:Remove() end
@@ -363,7 +408,6 @@ function TOOL:LeftClick(trace)
 
     GenerateMaze(ply, trace.HitPos, trace.HitNormal, width, depth, cellSize)
 
-    -- We don't store parts individually now – they are all frozen props.
     self.LastBuilding = {}
 
     return true
@@ -387,12 +431,16 @@ end
 ----------------------------------------------------------
 function TOOL.BuildCPanel(panel)
     panel:AddControl("Header", {
-        Description =
-            "Generate a maze made entirely from hunter plate4xN.\n" ..
-            "cell size = distance between walls."
+        Description = "Generate a maze using unit size 2/4/32.\nSelect unit, then set width/depth (cells)."
     })
+
+    local combo = panel:ComboBox("Wall Unit", "maze_unit")
+    combo:AddChoice("1. 2 (plate2x)", "2")
+    combo:AddChoice("2. 4 (plate4x)", "4")
+    combo:AddChoice("3. 8 (plate16x)", "8")
+    combo:AddChoice("4. 16 (plate16x)", "16")
+    combo:AddChoice("5. 32 (plate32x)", "32")
 
     panel:NumSlider("Maze Width (cells)",  "maze_width",    2, 32, 0)
     panel:NumSlider("Maze Depth (cells)",  "maze_depth",    2, 32, 0)
-    panel:NumSlider("Cell Size (units)",   "maze_cellsize", 100, 200, 0)
 end
