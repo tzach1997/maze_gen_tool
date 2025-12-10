@@ -19,10 +19,12 @@ TOOL.ClientConVar["depth"]    = "8"
 TOOL.ClientConVar["material"] = "" -- optional material to apply to spawned walls
 TOOL.ClientConVar["floor"]    = "0" -- spawn floor tiles
 TOOL.ClientConVar["roof"]     = "0" -- spawn roof tiles
+TOOL.ClientConVar["rotation"] = "0" -- rotation in 90° increments (0, 90, 180, 270)
 -- cellsize = distance between adjacent walls (depends on unit)
 
 TOOL.LastBuilding = TOOL.LastBuilding or {}
 TOOL.Mazes = TOOL.Mazes or {} -- stack of generated mazes (each is a table of ents)
+TOOL.Rotation = TOOL.Rotation or 0 -- current rotation in degrees (client-side)
 
 -- during generation this points to the table receiving spawned parts
 local currentMazeParts = nil
@@ -72,7 +74,7 @@ local function SpawnProp(ply, model, pos, ang)
     return ent
 end
 
--- We'll choose `wallDefs` and `cellSize` at runtime based on selected `maze_unit`.
+-- We'll choose `wallDefs` and `cellSize` at runtime based on selected `unit`.
 -- Definitions for the three supported units (2, 4, 32).
 local wallDefsByUnit = {
     ["2"] = {
@@ -330,13 +332,13 @@ end
 ----------------------------------------------------------
 -- Core: Generate maze props
 ----------------------------------------------------------
-local function GenerateMaze(ply, hitPos, hitNormal, width, depth, cellSize, unit, wantFloor, wantRoof)
+local function GenerateMaze(ply, hitPos, hitNormal, width, depth, cellSize, unit, wantFloor, wantRoof, rotation)
     if not SERVER then return end
 
     local cells = GenerateMazeData(width, depth)
 
-    local baseAng = hitNormal:Angle()
-    baseAng:RotateAroundAxis(baseAng:Right(), -90)
+    local baseAng = Angle(0, 0, 0)
+    baseAng:RotateAroundAxis(baseAng:Up(), rotation or 0)
 
     local wallHeightOffset = cellSize / 2
     local basePos = hitPos + hitNormal * 4
@@ -467,11 +469,13 @@ function TOOL:LeftClick(trace)
     local wantFloor = tonumber(self:GetClientInfo("floor")) ~= 0
     local wantRoof  = tonumber(self:GetClientInfo("roof"))  ~= 0
 
+    local rotation = tonumber(self:GetClientInfo("rotation")) or 0
+
     -- Create a new maze parts table and make SpawnProp append into it
     local newMaze = {}
     currentMazeParts = newMaze
 
-    GenerateMaze(ply, trace.HitPos, trace.HitNormal, width, depth, cellSize, unit, wantFloor, wantRoof)
+    GenerateMaze(ply, trace.HitPos, trace.HitNormal, width, depth, cellSize, unit, wantFloor, wantRoof, rotation)
 
     -- Generation finished; stop directing spawns into currentMazeParts
     currentMazeParts = nil
@@ -525,4 +529,5 @@ function TOOL.BuildCPanel(panel)
     panel:TextEntry("Wall Material (leave empty for none)", "maze_material")
     panel:CheckBox("Add Floor", "maze_floor")
     panel:CheckBox("Add Roof", "maze_roof")
+    panel:NumSlider("Rotate", "maze_rotation", 0, 360, 0)
 end
