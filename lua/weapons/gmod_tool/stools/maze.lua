@@ -1,11 +1,5 @@
 if SERVER then
     AddCSLuaFile()
-
-    duplicator.RegisterEntityModifier("maze_material", function(ply, e, data)
-        if IsValid(e) and data and data.mat then
-            e:SetMaterial(data.mat)
-        end
-    end)
 end
 
 TOOL.Category   = "Construction"
@@ -72,13 +66,25 @@ local function SpawnProp(ply, model, pos, ang)
     ply:AddCleanup("props", ent)
 
     -- Apply material if specified for this generation
-    if isstring(currentWallMaterial) and currentWallMaterial ~= "" then
-        pcall(function() ent:SetMaterial(currentWallMaterial) end)
+    local matToApply = currentWallMaterial
+    if isstring(matToApply) and matToApply ~= "" then
+        -- Apply immediately
+        pcall(function() ent:SetMaterial(matToApply) end)
 
-        -- Store material as a duplicator entity modifier so advdupe/duplicator preserves it
+        -- Re-apply on next tick in case the prop hasn't fully initialised yet
+        timer.Simple(0, function()
+            if IsValid(ent) then
+                pcall(function() ent:SetMaterial(matToApply) end)
+            end
+        end)
+
+        -- Store using the EXACT same format as GMod's built-in Material tool:
+        -- key = "material" (lowercase), field = "MaterialOverride"
+        -- This modifier is registered on every GMod server by default,
+        -- so it restores correctly with AdvDupe2 without needing any extra mods.
         pcall(function()
             if duplicator and duplicator.StoreEntityModifier then
-                duplicator.StoreEntityModifier(ent, "maze_material", { mat = currentWallMaterial })
+                duplicator.StoreEntityModifier(ent, "material", { MaterialOverride = matToApply })
             end
         end)
     end
@@ -577,6 +583,9 @@ function TOOL:LeftClick(trace)
     local wallMaterial = tostring(self:GetClientInfo("material") or "")
     local floorMaterial = tostring(self:GetClientInfo("floor_material") or "")
     local roofMaterial = tostring(self:GetClientInfo("roof_material") or "")
+
+    -- Debug: print what materials were received (remove once confirmed working)
+    print("[MazeGen] wallMaterial='" .. wallMaterial .. "' floorMaterial='" .. floorMaterial .. "' roofMaterial='" .. roofMaterial .. "'")
 
     local wantFloor = tonumber(self:GetClientInfo("floor")) ~= 0
     local wantRoof  = tonumber(self:GetClientInfo("roof"))  ~= 0
