@@ -212,8 +212,12 @@ local function SpawnFloorOrRoof(ply, basePos, baseAng, cellSize, width, depth, u
     local covered = {}
     for x = 1, width do covered[x] = {} end
 
-    -- Rotated angle: 90° yaw so the plate's long axis aligns with Right
-    local angRot = baseAng * 1
+    -- All flat tiles need 90° yaw from baseAng to align correctly.
+    -- Rotated tiles (wider than 1 cell) need an additional 90° on top.
+    local angNorm = Angle(baseAng.p, baseAng.y, baseAng.r)
+    angNorm:RotateAroundAxis(up, 90)
+    local angRot = Angle(baseAng.p, baseAng.y, baseAng.r)
+    angRot:RotateAroundAxis(up, 180)
 
     for cy = 1, depth do
         local cx = 1
@@ -255,7 +259,7 @@ local function SpawnFloorOrRoof(ply, basePos, baseAng, cellSize, width, depth, u
                 local centerX = ((cx - 1) + tileCW * 0.5) * cellSize
                 local centerY = ((cy - 1) + tileCH * 0.5) * cellSize
                 local offset  = right * centerX + forward * centerY + up * heightOffset
-                SpawnProp(ply, chosen.model, basePos + offset, useRot and angRot or baseAng)
+                SpawnProp(ply, chosen.model, basePos + offset, useRot and angRot or angNorm)
 
                 cx = cx + tileCW
             end
