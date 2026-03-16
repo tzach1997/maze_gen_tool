@@ -23,6 +23,8 @@ TOOL.ClientConVar["unit"]     = "4"  -- allowed: 2,4,8,16,32
 TOOL.ClientConVar["width"]    = "8"
 TOOL.ClientConVar["depth"]    = "8"
 TOOL.ClientConVar["material"] = ""   -- optional material to apply to spawned walls
+TOOL.ClientConVar["floor_material"] = ""   -- optional material to apply to floor
+TOOL.ClientConVar["roof_material"]  = ""   -- optional material to apply to roof
 TOOL.ClientConVar["floor"]    = "0"  -- spawn floor tiles
 TOOL.ClientConVar["roof"]     = "0"  -- spawn roof tiles
 TOOL.ClientConVar["rotation"] = "0"  -- rotation in 90° increments (0, 90, 180, 270)
@@ -436,7 +438,7 @@ end
 ----------------------------------------------------------
 -- Core: Generate maze props
 ----------------------------------------------------------
-local function GenerateMaze(ply, hitPos, hitNormal, width, depth, cellSize, unit, wantFloor, wantRoof, rotation)
+local function GenerateMaze(ply, hitPos, hitNormal, width, depth, cellSize, unit, wantFloor, wantRoof, rotation, wallMaterial, floorMaterial, roofMaterial)
     if not SERVER then return end
 
     local cells = GenerateMazeData(width, depth)
@@ -446,6 +448,8 @@ local function GenerateMaze(ply, hitPos, hitNormal, width, depth, cellSize, unit
 
     local wallHeightOffset = cellSize / 2
     local basePos = hitPos + hitNormal * 4
+
+    currentWallMaterial = wallMaterial
 
     --------------------------------------------------
     -- NORTH walls (row by row)
@@ -541,12 +545,14 @@ local function GenerateMaze(ply, hitPos, hitNormal, width, depth, cellSize, unit
         end
     end
 
-    -- Optionally spawn floor and/or roof tiles (one tile per cell)
+    -- Optionally spawn floor and/or roof tiles
     if wantFloor then
+        currentWallMaterial = floorMaterial
         SpawnFloorOrRoof(ply, basePos, baseAng, cellSize, width, depth, unit, false)
     end
 
     if wantRoof then
+        currentWallMaterial = roofMaterial
         SpawnFloorOrRoof(ply, basePos, baseAng, cellSize, width, depth, unit, true)
     end
 end
@@ -567,8 +573,10 @@ function TOOL:LeftClick(trace)
     currentWallDefs = unitCfg.defs
     local cellSize = unitCfg.cellSize
 
-    -- Read material from client settings and set for this generation
-    currentWallMaterial = tostring(self:GetClientInfo("material") or "")
+    -- Read materials from client settings
+    local wallMaterial = tostring(self:GetClientInfo("material") or "")
+    local floorMaterial = tostring(self:GetClientInfo("floor_material") or "")
+    local roofMaterial = tostring(self:GetClientInfo("roof_material") or "")
 
     local wantFloor = tonumber(self:GetClientInfo("floor")) ~= 0
     local wantRoof  = tonumber(self:GetClientInfo("roof"))  ~= 0
@@ -579,7 +587,7 @@ function TOOL:LeftClick(trace)
     local newMaze = {}
     currentMazeParts = newMaze
 
-    GenerateMaze(ply, trace.HitPos, trace.HitNormal, width, depth, cellSize, unit, wantFloor, wantRoof, rotation)
+    GenerateMaze(ply, trace.HitPos, trace.HitNormal, width, depth, cellSize, unit, wantFloor, wantRoof, rotation, wallMaterial, floorMaterial, roofMaterial)
 
     -- Generation finished; stop directing spawns into currentMazeParts
     currentMazeParts = nil
@@ -704,6 +712,8 @@ function TOOL.BuildCPanel(panel)
     panel:NumSlider("Maze Width (cells)",  "maze_width",    2, 64, 0)
     panel:NumSlider("Maze Depth (cells)",  "maze_depth",    2, 64, 0)
     panel:TextEntry("Wall Material (leave empty for none)", "maze_material")
+    panel:TextEntry("Floor Material (leave empty for none)", "maze_floor_material")
+    panel:TextEntry("Roof Material (leave empty for none)", "maze_roof_material")
     panel:CheckBox("Add Floor", "maze_floor")
     panel:CheckBox("Add Roof", "maze_roof")
     panel:NumSlider("Rotate", "maze_rotation", 0, 360, 0)
