@@ -160,57 +160,104 @@ local wallDefsByUnit = {
 -- active definitions (will be swapped when the player picks a unit)
 local currentWallDefs = wallDefsByUnit["4"].defs
 
--- Spawn optimized floor or roof.
--- Reuses wallDefsByUnit: plate{U}x{L} laid flat = 1 cell wide x segments cells long.
--- Scans column by column, fills each column top-to-bottom with the longest fitting plate.
--- No rotation needed: plates at baseAng already lie flat with long axis along Forward.
+-- Full 2D plate lookup per unit.
+-- plate{N}x{M} at unit U covers (N/U) cells wide x (M/U) cells tall.
+-- Only plates where both dimensions divide evenly into cells are included.
+-- Sorted by area (cw*ch) descending so the greedy packer always tries largest first.
+local roofPlatesByUnit = {}
+do
+    local allPlates = {
+        {1,1,"plate1x1"},{1,2,"plate1x2"},{1,3,"plate1x3"},{1,4,"plate1x4"},
+        {1,5,"plate1x5"},{1,6,"plate1x6"},{1,7,"plate1x7"},{1,8,"plate1x8"},
+        {1,16,"plate1x16"},{1,24,"plate1x24"},{1,32,"plate1x32"},
+        {2,2,"plate2x2"},{2,4,"plate2x4"},{2,6,"plate2x6"},{2,8,"plate2x8"},
+        {2,16,"plate2x16"},{2,24,"plate2x24"},{2,32,"plate2x32"},
+        {4,4,"plate4x4"},{4,8,"plate4x8"},{4,16,"plate4x16"},{4,24,"plate4x24"},{4,32,"plate4x32"},
+        {8,8,"plate8x8"},{8,16,"plate8x16"},{8,24,"plate8x24"},{8,32,"plate8x32"},
+        {16,16,"plate16x16"},{16,32,"plate16x32"},
+        {32,32,"plate32x32"},
+    }
+    for _, unitStr in ipairs({"1","2","4","8","16","32"}) do
+        local U = tonumber(unitStr)
+        local list = {}
+        for _, p in ipairs(allPlates) do
+            local N, M, name = p[1], p[2], p[3]
+            local cw = N / U
+            local ch = M / U
+            if cw == math.floor(cw) and ch == math.floor(ch) and cw >= 1 and ch >= 1 then
+                table.insert(list, {
+                    cw    = cw,
+                    ch    = ch,
+                    model = "models/hunter/plates/" .. name .. ".mdl"
+                })
+            end
+        end
+        table.sort(list, function(a, b) return (a.cw * a.ch) > (b.cw * b.ch) end)
+        roofPlatesByUnit[unitStr] = list
+    end
+end
+
+-- Spawn optimized floor or roof using 2D greedy rectangle packing.
+-- At each uncovered cell, measures free space right (freeW) and down (freeH),
+-- then places the largest plate (by area) that fits in either orientation.
+-- A fully open 8x8 maze at unit=2 becomes 1 prop (plate16x16) instead of 64.
 local function SpawnFloorOrRoof(ply, basePos, baseAng, cellSize, width, depth, unit, isRoof)
     local right   = baseAng:Right()
     local forward = baseAng:Forward()
     local up      = baseAng:Up()
 
-    local defs = wallDefsByUnit[unit] and wallDefsByUnit[unit].defs or wallDefsByUnit["4"].defs
+    local plates = roofPlatesByUnit[unit] or roofPlatesByUnit["4"]
     local heightOffset = isRoof and cellSize or 0
 
     local covered = {}
     for x = 1, width do covered[x] = {} end
 
-    for cx = 1, width do
-        local cy = 1
-        while cy <= depth do
-            if covered[cx][cy] then
-                cy = cy + 1
-            else
-                -- count free cells going down this column
-                local freeH = 0
-                while cy + freeH <= depth and not covered[cx][cy + freeH] do
-                    freeH = freeH + 1
-                end
+    -- Rotated angle: 90° yaw so the plate's long axis aligns with Right
+    local angRot = baseAng * 1
 
-                -- pick largest plate whose segments <= freeH
-                local chosen = defs[#defs]
-                for _, def in ipairs(defs) do
-                    if def.segments <= freeH then
-                        chosen = def
+    for cy = 1, depth do
+        local cx = 1
+        while cx <= width do
+            if covered[cx][cy] then
+                cx = cx + 1
+            else
+                -- measure free cells right and down
+                local freeW = 0
+                while cx + freeW <= width  and not covered[cx + freeW][cy] do freeW = freeW + 1 end
+                local freeH = 0
+                while cy + freeH <= depth  and not covered[cx][cy + freeH] do freeH = freeH + 1 end
+
+                -- pick largest plate fitting in freeW x freeH (normal or rotated)
+                local chosen, tileCW, tileCH, useRot = nil, 1, 1, false
+                for _, p in ipairs(plates) do
+                    if p.cw <= freeW and p.ch <= freeH then
+                        chosen, tileCW, tileCH, useRot = p, p.cw, p.ch, false
+                        break
+                    end
+                    if p.ch <= freeW and p.cw <= freeH then
+                        chosen, tileCW, tileCH, useRot = p, p.ch, p.cw, true
                         break
                     end
                 end
-
-                -- mark cells covered
-                for dy = cy, cy + chosen.segments - 1 do
-                    covered[cx][dy] = true
+                if not chosen then
+                    chosen = plates[#plates]
+                    tileCW, tileCH, useRot = 1, 1, false
                 end
 
-                -- centre of this 1 x chosen.segments tile
-                local centerX = (cx - 0.5) * cellSize
-                local centerY = ((cy - 1) + chosen.segments * 0.5) * cellSize
+                -- mark covered
+                for dy = cy, cy + tileCH - 1 do
+                    for dx = cx, cx + tileCW - 1 do
+                        covered[dx][dy] = true
+                    end
+                end
+
+                -- spawn centred on the tile's footprint
+                local centerX = ((cx - 1) + tileCW * 0.5) * cellSize
+                local centerY = ((cy - 1) + tileCH * 0.5) * cellSize
                 local offset  = right * centerX + forward * centerY + up * heightOffset
+                SpawnProp(ply, chosen.model, basePos + offset, useRot and angRot or baseAng)
 
-                local ang = baseAng * 1
-                ang:RotateAroundAxis(ang:Up(), 90)
-                SpawnProp(ply, chosen.model, basePos + offset, ang)
-
-                cy = cy + chosen.segments
+                cx = cx + tileCW
             end
         end
     end
