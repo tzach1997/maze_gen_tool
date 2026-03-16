@@ -109,7 +109,7 @@ local wallDefsByUnit = {
             { segments = 2,  model = "models/hunter/plates/plate1x2.mdl"  },
             { segments = 1,  model = "models/hunter/plates/plate1x1.mdl"  }
         },
-        cellSize = 48
+        cellSize = 47
     },
     ["2"] = {
         defs = {
@@ -160,37 +160,58 @@ local wallDefsByUnit = {
 -- active definitions (will be swapped when the player picks a unit)
 local currentWallDefs = wallDefsByUnit["4"].defs
 
--- floor/roof single-tile model per cell for each unit
-local floorTileByUnit = {
-    ["1"]  = "models/hunter/plates/plate1x1.mdl",
-    ["2"]  = "models/hunter/plates/plate2x2.mdl",
-    ["4"]  = "models/hunter/plates/plate4x4.mdl",
-    ["8"]  = "models/hunter/plates/plate8x8.mdl",
-    ["16"] = "models/hunter/plates/plate16x16.mdl",
-    ["32"] = "models/hunter/plates/plate32x32.mdl"
-}
-
--- Spawn a flat tile for floor or roof per cell (one tile per cell)
+-- Spawn optimized floor or roof.
+-- Reuses wallDefsByUnit: plate{U}x{L} laid flat = 1 cell wide x segments cells long.
+-- Scans column by column, fills each column top-to-bottom with the longest fitting plate.
+-- No rotation needed: plates at baseAng already lie flat with long axis along Forward.
 local function SpawnFloorOrRoof(ply, basePos, baseAng, cellSize, width, depth, unit, isRoof)
     local right   = baseAng:Right()
     local forward = baseAng:Forward()
     local up      = baseAng:Up()
 
-    local model = floorTileByUnit[unit] or "models/hunter/plates/plate4x4.mdl"
-
-    -- roof placed one cell height above base; floor at base
+    local defs = wallDefsByUnit[unit] and wallDefsByUnit[unit].defs or wallDefsByUnit["4"].defs
     local heightOffset = isRoof and cellSize or 0
 
-    for x = 1, width do
-        for y = 1, depth do
-            local centerX = (x - 0.5) * cellSize
-            local centerY = (y - 0.5) * cellSize
+    local covered = {}
+    for x = 1, width do covered[x] = {} end
 
-            local offset = right * centerX + forward * centerY + up * heightOffset
-            local pos = basePos + offset
-            local ang = baseAng -- flat orientation
+    for cx = 1, width do
+        local cy = 1
+        while cy <= depth do
+            if covered[cx][cy] then
+                cy = cy + 1
+            else
+                -- count free cells going down this column
+                local freeH = 0
+                while cy + freeH <= depth and not covered[cx][cy + freeH] do
+                    freeH = freeH + 1
+                end
 
-            SpawnProp(ply, model, pos, ang)
+                -- pick largest plate whose segments <= freeH
+                local chosen = defs[#defs]
+                for _, def in ipairs(defs) do
+                    if def.segments <= freeH then
+                        chosen = def
+                        break
+                    end
+                end
+
+                -- mark cells covered
+                for dy = cy, cy + chosen.segments - 1 do
+                    covered[cx][dy] = true
+                end
+
+                -- centre of this 1 x chosen.segments tile
+                local centerX = (cx - 0.5) * cellSize
+                local centerY = ((cy - 1) + chosen.segments * 0.5) * cellSize
+                local offset  = right * centerX + forward * centerY + up * heightOffset
+
+                local ang = baseAng * 1
+                ang:RotateAroundAxis(ang:Up(), 90)
+                SpawnProp(ply, chosen.model, basePos + offset, ang)
+
+                cy = cy + chosen.segments
+            end
         end
     end
 end
