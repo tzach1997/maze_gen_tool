@@ -1,5 +1,11 @@
 if SERVER then
     AddCSLuaFile()
+
+    duplicator.RegisterEntityModifier("maze_material", function(ply, e, data)
+        if IsValid(e) and data and data.mat then
+            e:SetMaterial(data.mat)
+        end
+    end)
 end
 
 TOOL.Category   = "Construction"
@@ -69,15 +75,6 @@ local function SpawnProp(ply, model, pos, ang)
 
         -- Store material as a duplicator entity modifier so advdupe/duplicator preserves it
         pcall(function()
-            if duplicator and duplicator.RegisterEntityModifier then
-                -- register a safe, tool-specific modifier that sets the material on paste
-                duplicator.RegisterEntityModifier("maze_material", function(ply, e, data)
-                    if IsValid(e) and data and data.mat then
-                        e:SetMaterial(data.mat)
-                    end
-                end)
-            end
-
             if duplicator and duplicator.StoreEntityModifier then
                 duplicator.StoreEntityModifier(ent, "maze_material", { mat = currentWallMaterial })
             end
